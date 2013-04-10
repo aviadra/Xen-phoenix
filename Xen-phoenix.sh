@@ -31,12 +31,19 @@ Email_func()
 xen_xe_func()
 {
 	case $2 in
+		delete)
+			xen_xe_func "$1" "uuid_2_name"
+			xen_xe_func "$1" "shutdown"
+			$xencmd vm-destroy uuid=$1
+			[[ $DEBUG = "ALL" || $DEBUG =~ .*delete.* ]] && logger_xen "Deleted VM \"$VM_NAME_FROM_UUID\" with uuid of \"$1\"."
+			;;
 		guest_tools_last_seen)
 			xen_xe_func "$1" "uuid_2_name"
 			GLS="$( $xencmd vm-param-get uuid=$1 param-name=guest-metrics-last-updated )"
 			[[ $DEBUG = "ALL" || $DEBUG =~ .*guest_tools_last_seen.* ]] && logger_xen "guest_tools_last_seen for \"$VM_NAME_FROM_UUID\" with uuid of \"$1\" has been set to \"$GLS\"."
 			;;
 		list_all_VMs_UUIDs)
+			VMs_on_server=""
 			VMs_on_server_raw="$( $xencmd vm-list params=uuid | awk '{print $5}' )"
 			for VM_UUID_raw in $VMs_on_server_raw; do
 				if [[ "$( $xencmd vm-param-get uuid=$VM_UUID_raw param-name=is-control-domain )" = "false" ]]; then
@@ -229,28 +236,6 @@ xen_xe_func()
 	esac
 }
 
-backup_func()
-{
-	logger_xen "Backup func has been invoked for \"$1\"."
-	VM_TO_BACKUP="$1"
-	xen_xe_func "$VM_TO_BACKUP" "uuid_2_name"
-	xen_xe_func "$VM_TO_BACKUP" "space_for_backup_check"
-	xen_xe_func "$VM_TO_BACKUP" "org_state"
-	BACKUP_FILE_AND_LOCAL_LONG="${BackupLocation}/${VM_NAME_FROM_UUID}- ${1}.xva"
-	BACKUP_FILE_AND_LOCAL_LONG="${BACKUP_FILE_AND_LOCAL_LONG// /_}"
-	[[ -e "$BACKUP_FILE_AND_LOCAL_LONG" ]] && mv "$BACKUP_FILE_AND_LOCAL_LONG" "$BACKUP_FILE_AND_LOCAL_LONG.org" && logger_xen "Moved old backup to temp location."
-	[[ $POWERSTATE = "running" ]] && xen_xe_func "$1" "shutdown"
-	logger_xen "Now exporting \"$VM_TO_BACKUP\"."
-	xen_xe_func "$VM_TO_BACKUP" "export"
-	if [[ $ORG_STATE = "running" && "$2" != "child" ]];then 
-		logger_xen "Now starting up $1, because ORG_STATE was $ORG_STATE"
-		xen_xe_func "$1" "start"
-		logger_xen "Giving $WARM_UP_DELAY seconds so that $1 finishes warming up"
-		sleep $WARM_UP_DELAY
-	fi
-	[[ $2 = "child" ]] && logger_xen "This VM \"$VM_NAME_FROM_UUID\" is a CHILD, will not start it until PARENT is done."
-	[[ $EXPORT = "OK" && -e $BACKUP_FILE_AND_LOCAL_LONG.org ]] && rm "$BACKUP_FILE_AND_LOCAL_LONG.org" -f && logger_xen "Deleted old backup for \"$VM_NAME_FROM_UUID\" with UUID of: \"$1\" as new one is OK."
-}
 ##################ENGINE#############################################
 logger_xen "Welcome to the Xen-phoenix restore script."
 logger_xen "" # log formatting
@@ -303,6 +288,18 @@ if [[ "$?" -eq 0 ]] ; then
 else
 	logger_xen "Was unable to create even the simplest form of a file to the backup location \"$BackupLocation\", so restore run has been aborted." "expose" "Restore location - Abort!"
 	exit 2
+fi
+
+#Prepare server by deleting existing content
+if [[ $SERVER_PREP = "enabled" ]] ; then
+	logger_xen "SERVER_PREP was enabled in settings file, so will now delete all VMs on server."
+	xen_xe_func " " "list_all_VMs_UUIDs"
+	logger_xen "" # log formatting
+	for VM in $VMs_on_server ; do
+		xen_xe_func "$VM" "delete"
+	done
+else
+	logger_xen "The SERVER_PREP variable was not enabled, so mass VMs deletion was skipped."
 fi
 
 #find files to work on
