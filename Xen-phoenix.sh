@@ -24,9 +24,9 @@ Email_func()
 	MSG="$1"
 	[[ ! -x $SendEmail_location ]] && logger_xen "The SendEmail_location \"$SendEmail_location\", does NOT point to a perl executable." && continue
 	[[ -z "$2" ]] && EMAIL_SUB="Exception" || EMAIL_SUB="$2"
-	[[ "$2" = "Started" ]] && MSG="$MSG \\nThe VM list is set to be obtained using \"$LIST_METHOD\".\\nThe parameter that will be used is: \"$SECOND_PARAM\"." && [[ $LIST_METHOD = "TAGs" ]] && EMAIL_SUB="$EMAIL_SUB for $SECOND_PARAM"
+	#[[ "$2" = "Started" ]] && MSG="$MSG \\nThe VM list is set to be obtained using \"$LIST_METHOD\".\\nThe parameter that will be used is: \"$SECOND_PARAM\"." && [[ $LIST_METHOD = "TAGs" ]] && EMAIL_SUB="$EMAIL_SUB for $SECOND_PARAM"
 	[[ "$2" =~ .*Exception.* ]] && MSG="$MSG \\nThe VM list was obtained using \"$LIST_METHOD\".\\n" && if [[ $LIST_METHOD = "FILE" ]]; then MSG="$MSG \n\n The list was $FILELIST"; else MSG="$MSG \n\n The TAG was $TAG" ;fi
-	[[ $DEBUG = "0" || $DEBUG =~ .*EmailENABLed.* ]] && [[ -e $SendEmail_location ]] && $SendEmail_location -f "$EMAIL_FROM" -t "$EMAIL_TO" -u "Xen_backup - $EMAIL_SUB" -s "$EMAIL_SMART_HOST" -q -m "$MSG"
+	[[ $DEBUG = "0" || $DEBUG =~ .*EmailENABLed.* ]] && [[ -e $SendEmail_location ]] && $SendEmail_location -f "$EMAIL_FROM" -t "$EMAIL_TO" -u "Xen_restore - $EMAIL_SUB" -s "$EMAIL_SMART_HOST" -q -m "$MSG"
 } 
 xen_xe_func()
 {
@@ -37,7 +37,15 @@ xen_xe_func()
 			[[ $DEBUG = "ALL" || $DEBUG =~ .*guest_tools_last_seen.* ]] && logger_xen "guest_tools_last_seen for \"$VM_NAME_FROM_UUID\" with uuid of \"$1\" has been set to \"$GLS\"."
 			;;
 		list_all_VMs_UUIDs)
-			VMs_on_server="$( $xencmd vm-list | grep uuid | awk '{print $5}' )"
+			VMs_on_server_raw="$( $xencmd vm-list params=uuid | awk '{print $5}' )"
+			for VM_UUID_raw in $VMs_on_server_raw; do
+				if [[ "$( $xencmd vm-param-get uuid=$VM_UUID_raw param-name=is-control-domain )" = "false" ]]; then
+					VMs_on_server="$VMs_on_server $VM_UUID_raw"
+					[[ $DEBUG = "ALL" || $DEBUG =~ .*list_all_VMs_UUIDs.* ]] && logger_xen "Regular VM $VM_UUID_raw added to general list"
+				else
+					[[ $DEBUG = "ALL" || $DEBUG =~ .*list_all_VMs_UUIDs.* ]] && logger_xen "this is a control domain, so will not add it to general VMs list."
+				fi
+			done
 			[[ $DEBUG = "ALL" || $DEBUG =~ .*list_all_VMs_UUIDs.* ]] && logger_xen "All VMs on server has been set to: $VMs_on_server"
 			;;
 		import)
@@ -315,47 +323,57 @@ for VM in $VM_LIST_FROM_CHEVRONs; do
 done
  
 #verifier
-xen_xe_func " " "list_all_VMs_UUIDs"
+if [[ $VERIFIER = "enabled" ]] ; then
+	logger_xen "VERIFIER was enabled in settings file, so will now check VMs for guest tools heartbeat."
+	logger_xen "" # log formatting
+	xen_xe_func " " "list_all_VMs_UUIDs"
+	for VM in $VMs_on_server ; do
+		Vcounter=0
+		current_sec="$( date -u +%S )"; current_sec=$( echo $current_sec|sed 's/^0*//' )
 
-for VM in $VMs_on_server ; do
-	Vcounter=0
-	while [[ $( date -u +%S ) -ge 50 ]]; do
-			sleep 1
-	done
-	xen_xe_func "$VM" "guest_tools_last_seen"
-	ORG_GLS=$GLS
-	[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "pre-starting ORG_GLS was: $ORG_GLS"
-	xen_xe_func "$VM" "state"
-	if [[ $POWERSTATE = "running" ]]; then
-		xen_xe_func "$VM" "shutdown"
-		xen_xe_func "$VM" "start"
-	else
-		xen_xe_func "$VM" "start"
-	fi
-	while [[ "$GLS" = "$ORG_GLS" || "$GLS" = "<not in database>" && $Vcounter -le 25 ]]; do
-		[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "wating for GLS to change"
-		sleep 3
+		#don't try to asses a heartbeat befor a minute change
+		while [[ $current_sec -ge 50 ]]; do
+				sleep 1
+				current_sec="$( date -u +%S )"; current_sec=$( echo $current_sec|sed 's/^0*//' )
+		done
 		xen_xe_func "$VM" "guest_tools_last_seen"
-		let Vcounter=Vcounter+1
-		[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "Vcounter is: $Vcounter"
-		logger_xen "" # log formatting
+		ORG_GLS=$GLS
+		[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "For VM $VM, pre-starting ORG_GLS is: $ORG_GLS"
+		xen_xe_func "$VM" "state"
+		if [[ $POWERSTATE = "running" ]]; then
+			[[ $DEBUG = "0" ]] && xen_xe_func "$VM" "shutdown"
+			[[ $DEBUG != "0" ]] && logger_xen "skipped actually shutting down to save time"
+		fi
+			[[ $DEBUG = "0" ]] && xen_xe_func "$VM" "start"
+			[[ $DEBUG != "0" ]] && logger_xen "skipped actually shutting down to save time"
+			[[ $DEBUG = "0" ]] && sleep $WARM_UP_DELAY && sleep $WARM_UP_DELAY
+		
+		[[ $DEBUG != "0" ]] && Retry_counter=3
+		[[ $DEBUG = "0" ]] && Retry_counter=25
+		while [[ "$GLS" = "$ORG_GLS" || "$GLS" = "<not in database>" ]]; do
+			[[ $Vcounter -le $Retry_counter ]] && break && logger_xen "Vcounter was $Vcounter and Retry_counter was $Retry_counter"
+			[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "wating for GLS to change"
+			sleep 5
+			xen_xe_func "$VM" "guest_tools_last_seen"
+			let Vcounter=Vcounter+1
+			[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "Vcounter is: $Vcounter"
+		done
+	[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "new GLS is $GLS"
+	if [[ "$GLS" =~ .*"$( date -u +%H:%M )"* && "$GLS" =~ .*"$( date -u +%Y%m%d )"* ]] ; then
+		xen_xe_func "$VM" "uuid_2_name"
+		[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "The new GLS for \"$VM_NAME_FROM_UUID\" does rufly contain the current time ^_^. Current time was seen as: $( date -u +%H:%M ) & $( date -u +%Y%m%d )"
+		logger_xen "Was able to get a heartbeat from \"$VM_NAME_FROM_UUID\" with uuid of \"$VM\""
+	else
+		[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "The new GLS  for \"$VM_NAME_FROM_UUID\" does NOT contain the current time??" "expose"
+	fi
+	xen_xe_func "$VM" "shutdown"
+	logger_xen "" # log formatting
+	logger_xen "" # log formatting
 	done
-[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "new GLS is $GLS"
-if [[ "$GLS" =~ .*"$( date -u +%H:%M )"* ]] ; then
-	xen_xe_func "$VM" "uuid_2_name"
-	[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "The new GLS for \"$VM_NAME_FROM_UUID\" does rufly contain the current time ^_^"
 else
-	[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "The new GLS  for \"$VM_NAME_FROM_UUID\" does NOT contain the current time??" "expose"
+	logger_xen "The VERIFIER variable was not enabled, so the verification was skipped. \"\$VERIFIER\" was set to: $VERIFIER."
 fi
-xen_xe_func "$VM" "shutdown"
-logger_xen "" # log formatting
-logger_xen "" # log formatting
-done
 
 #Yey Done
-logger_xen "Backup script has finished its run and will now Email the report."
-if [[ $LIST_METHOD = "TAGs" ]]; then
-	Email_func "$Email_VAR" "Report for $TAG"
-else
-	Email_func "$Email_VAR" "Report"
-fi
+logger_xen "Restore script has finished its run and will now Email the report."
+Email_func "$Email_VAR" "Report"
