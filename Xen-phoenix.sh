@@ -40,7 +40,7 @@ xen_xe_func()
 		guest_tools_last_seen)
 			xen_xe_func "$1" "uuid_2_name"
 			GLS="$( $xencmd vm-param-get uuid=$1 param-name=guest-metrics-last-updated )"
-			[[ $DEBUG = "ALL" || $DEBUG =~ .*guest_tools_last_seen.* ]] && logger_xen "guest_tools_last_seen for \"$VM_NAME_FROM_UUID\" with uuid of \"$1\" has been set to \"$GLS\"."
+			[[ $DEBUG = "ALL" || $DEBUG =~ .*guest_tools_last_seen.* ]] && logger_xen "guest_tools_last_seen(GLS) for \"$VM_NAME_FROM_UUID\" with uuid of \"$1\" has been set to \"$GLS\"."
 			;;
 		list_all_VMs_UUIDs)
 			VMs_on_server=""
@@ -103,7 +103,7 @@ xen_xe_func()
 				$export_cmd > /dev/null
 				if [[ "$?" -eq 0 ]]; then
 					EXPORT="OK"
-					logger_xen "Successfully exported \"$VM_NAME_FROM_UUID\" with UUID of: \"$1\" :)"
+				logger_xen "Successfully exported \"$VM_NAME_FROM_UUID\" with UUID of: \"$1\" :)"
 					[[ $DEBUG = "ALL" || $DEBUG =~ .*Export_func.* ]] && logger_xen "Will now wait for 5s, to let \"$1\" time to cool-down."
 					sleep 5
 				else
@@ -154,8 +154,7 @@ xen_xe_func()
 					if [[ "$?" -eq 0 ]] ;then
 						logger_xen "Retry to start VM \"$1\" was successful"
 					else
-						logger_xen "FAILED twice to start \"$1\"" "Exception!!" "expose"
-						#Email_func "FAILED twice to start $1" "Exception!!"
+						logger_xen "FAILED twice to start \"$1\"" "expose"
 						continue
 					fi
 					 
@@ -336,19 +335,19 @@ if [[ $VERIFIER = "enabled" ]] ; then
 		xen_xe_func "$VM" "guest_tools_last_seen"
 		ORG_GLS=$GLS
 		[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "For VM $VM, pre-starting ORG_GLS is: $ORG_GLS"
-		xen_xe_func "$VM" "state"
-		if [[ $POWERSTATE = "running" ]]; then
-			[[ $DEBUG = "0" ]] && xen_xe_func "$VM" "shutdown"
-			[[ $DEBUG != "0" ]] && logger_xen "skipped actually shutting down to save time"
-		fi
-			[[ $DEBUG = "0" ]] && xen_xe_func "$VM" "start"
-			[[ $DEBUG != "0" ]] && logger_xen "skipped actually shutting down to save time"
-			[[ $DEBUG = "0" ]] && sleep $WARM_UP_DELAY && sleep $WARM_UP_DELAY
+			if [[ $DEBUG = "ALL" || $DEBUG =~ .*reboots_disabled.* ]]; then
+				logger_xen "skipped actually shutting down to save time"
+			else
+				xen_xe_func "$VM" "shutdown"
+				xen_xe_func "$VM" "start"
+				sleep $WARM_UP_DELAY
+				[[ $DEBUG = "0" ]] && sleep $WARM_UP_DELAY
+			fi
 		
 		[[ $DEBUG != "0" ]] && Retry_counter=3
 		[[ $DEBUG = "0" ]] && Retry_counter=25
-		while [[ "$GLS" = "$ORG_GLS" || "$GLS" = "<not in database>" ]]; do
-			[[ $Vcounter -le $Retry_counter ]] && break && logger_xen "Vcounter was $Vcounter and Retry_counter was $Retry_counter"
+		while [[ $GLS = $ORG_GLS || $GLS = "<not in database>" ]]; do
+			[[ $Vcounter -le $Retry_counter ]] || logger_xen "Vcounter was $Vcounter and Retry_counter was $Retry_counter. So stopped waiting for VM." || break
 			[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "wating for GLS to change"
 			sleep 5
 			xen_xe_func "$VM" "guest_tools_last_seen"
@@ -359,7 +358,7 @@ if [[ $VERIFIER = "enabled" ]] ; then
 	if [[ "$GLS" =~ .*"$( date -u +%H:%M )"* && "$GLS" =~ .*"$( date -u +%Y%m%d )"* ]] ; then
 		xen_xe_func "$VM" "uuid_2_name"
 		[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "The new GLS for \"$VM_NAME_FROM_UUID\" does rufly contain the current time ^_^. Current time was seen as: $( date -u +%H:%M ) & $( date -u +%Y%m%d )"
-		logger_xen "Was able to get a heartbeat from \"$VM_NAME_FROM_UUID\" with uuid of \"$VM\""
+		logger_xen "Was able to get a heartbeat from \"$VM_NAME_FROM_UUID\" with uuid of \"$VM\". It was \"$GLS\""
 	else
 		[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "The new GLS  for \"$VM_NAME_FROM_UUID\" does NOT contain the current time??" "expose"
 	fi
