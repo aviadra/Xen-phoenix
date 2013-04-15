@@ -24,7 +24,7 @@ Email_func()
 	MSG="$1"
 	[[ ! -x $SendEmail_location ]] && logger_xen "The SendEmail_location \"$SendEmail_location\", does NOT point to a perl executable." && continue
 	[[ -z "$2" ]] && EMAIL_SUB="Exception" || EMAIL_SUB="$2"
-	#[[ "$2" = "Started" ]] && MSG="$MSG \\nThe VM list is set to be obtained using \"$LIST_METHOD\".\\nThe parameter that will be used is: \"$SECOND_PARAM\"." && [[ $LIST_METHOD = "TAGs" ]] && EMAIL_SUB="$EMAIL_SUB for $SECOND_PARAM"
+	[[ "$2" = "Started" ]] && MSG="$MSG \\nThe Chevrons that will be used are: $CHEVRONs."
 	[[ "$2" =~ .*Exception.* ]] && MSG="$MSG \\nThe VM list was obtained using \"$LIST_METHOD\".\\n" && if [[ $LIST_METHOD = "FILE" ]]; then MSG="$MSG \n\n The list was $FILELIST"; else MSG="$MSG \n\n The TAG was $TAG" ;fi
 	[[ $DEBUG = "0" || $DEBUG =~ .*EmailENABLed.* ]] && [[ -e $SendEmail_location ]] && $SendEmail_location -f "$EMAIL_FROM" -t "$EMAIL_TO" -u "Xen_restore - $EMAIL_SUB" -s "$EMAIL_SMART_HOST" -q -m "$MSG"
 } 
@@ -263,6 +263,15 @@ else
 	exit 2
 fi
 
+#find files to work on
+for CHEVRON in $@; do
+	[[ "$CHEVRON" = "$1" ]] && continue
+	CHEVRONs="$CHEVRONs \"$CHEVRON"\"
+	VM_LIST_FROM_CHEVRONs="$VM_LIST_FROM_CHEVRONs $( find $BackupLocation -type f -name *$CHEVRON* )"
+	#statements
+done
+
+
 Email_func "$Email_VAR" "Started"
 
 if [[ $DEBUG = "0" ]]; then WARM_UP_DELAY=60; else WARM_UP_DELAY=5 ; fi
@@ -291,23 +300,22 @@ fi
 
 #Prepare server by deleting existing content
 if [[ $SERVER_PREP = "enabled" ]] ; then
+	logger_xen "" # log formatting
 	logger_xen "SERVER_PREP was enabled in settings file, so will now delete all VMs on server."
 	xen_xe_func " " "list_all_VMs_UUIDs"
+	logger_xen "" # log formatting
 	logger_xen "" # log formatting
 	for VM in $VMs_on_server ; do
 		xen_xe_func "$VM" "delete"
 	done
 else
+	logger_xen "" # log formatting
+	logger_xen "" # log formatting
 	logger_xen "The SERVER_PREP variable was not enabled, so mass VMs deletion was skipped."
+	logger_xen "" # log formatting
+	logger_xen "" # log formatting
 fi
 
-#find files to work on
-for CHEVRON in $@; do
-	[[ "$CHEVRON" = "$1" ]] && continue
-	VM_LIST_FROM_CHEVRONs="$VM_LIST_FROM_CHEVRONs $( find $BackupLocation -type f -name *$CHEVRON* )"
-	#statements
-done
-#echo $VM_LIST_FROM_CHEVRONs
 
 
 #The work.
