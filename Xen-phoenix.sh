@@ -34,6 +34,11 @@ xen_xe_func()
 		delete)
 			xen_xe_func "$1" "uuid_2_name"
 			xen_xe_func "$1" "shutdown"
+			VMVDIs="$( $xencmd vm-disk-list uuid=$1 vdi-params=uuid vbd-params=other | grep uuid | awk '{print $5}' )"
+			for VDIUUID in $VMVDIs; do 
+				[[ $DEBUG = "ALL" || $DEBUG =~ .*delete.* ]] && logger_xen "A VDIUUID for VM \"$VM_NAME_FROM_UUID\" with was: \"$VDIUUID\"."
+				$xencmd vdi-destroy uuid=$VDIUUID
+			done
 			$xencmd vm-destroy uuid=$1
 			[[ $DEBUG = "ALL" || $DEBUG =~ .*delete.* ]] && logger_xen "Deleted VM \"$VM_NAME_FROM_UUID\" with uuid of \"$1\"."
 			;;
@@ -315,8 +320,6 @@ else
 	logger_xen "" # log formatting
 	logger_xen "" # log formatting
 fi
-
-
 
 #The work.
 for VM in $VM_LIST_FROM_CHEVRONs; do
