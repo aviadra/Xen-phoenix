@@ -31,6 +31,13 @@ Email_func()
 xen_xe_func()
 {
 	case $2 in
+
+		keeper)
+			xen_xe_func "$1" "uuid_2_name"
+			[[ $DEBUG = "ALL" || $DEBUG =~ .*keeper.* ]] && logger_xen "The keeper func has been invoked for \"$VM_NAME_FROM_UUID\" with UUID of: \"$1\"."
+			Phoenix_keeper="$( $xencmd vm-param-get uuid=$1 param-name=other-config param-key=XenCenter.CustomFields.Phoenix_keeper 2> /dev/null )"
+			[[ $DEBUG = "ALL" || $DEBUG =~ .*keeper.* ]] && logger_xen "Phoenix_keeper: $Phoenix_keeper"
+			;;
 		delete)
 			xen_xe_func "$1" "uuid_2_name"
 			xen_xe_func "$1" "shutdown"
@@ -311,7 +318,13 @@ if [[ $SERVER_PREP = "enabled" ]] ; then
 	logger_xen "" # log formatting
 	logger_xen "" # log formatting
 	for VM in $VMs_on_server ; do
+		xen_xe_func "$VM" "uuid_2_name"
+		xen_xe_func "$VM" "keeper"
+		if [[ -z $Phoenix_keeper ]]; then
 		xen_xe_func "$VM" "delete"
+		else
+		logger_xen "Found a \"keeper\" tag for VM \"$VM_NAME_FROM_UUID\" with uuid of \"$VM\". It was \"$Phoenix_keeper\""
+	fi
 	done
 else
 	logger_xen "" # log formatting
@@ -358,7 +371,10 @@ if [[ $VERIFIER = "enabled" ]] ; then
 		[[ $DEBUG != "0" ]] && Retry_counter=3
 		[[ $DEBUG = "0" ]] && Retry_counter=25
 		while [[ $GLS = $ORG_GLS || $GLS = "<not in database>" ]]; do
-			[[ $Vcounter -le $Retry_counter ]] || logger_xen "Vcounter was $Vcounter and Retry_counter was $Retry_counter. So stopped waiting for VM." || break
+			if [[ $Vcounter -le $Retry_counter ]] ;then
+				logger_xen "Vcounter was $Vcounter and Retry_counter was $Retry_counter. So stopped waiting for VM."
+				break
+			fi
 			[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "wating for GLS to change"
 			sleep 5
 			xen_xe_func "$VM" "guest_tools_last_seen"
@@ -372,6 +388,7 @@ if [[ $VERIFIER = "enabled" ]] ; then
 		logger_xen "Was able to get a heartbeat from \"$VM_NAME_FROM_UUID\" with uuid of \"$VM\". It was \"$GLS\""
 	else
 		[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "The new GLS  for \"$VM_NAME_FROM_UUID\" does NOT contain the current time??" "expose"
+		logger_xen "FAILED to obtain a heartbeat from \"$VM_NAME_FROM_UUID\" with uuid of \"$VM\". :\\"
 	fi
 	xen_xe_func "$VM" "shutdown"
 	logger_xen "" # log formatting
