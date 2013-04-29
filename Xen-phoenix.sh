@@ -380,6 +380,8 @@ if [[ $VERIFIER = "enabled" ]] ; then
 		xen_xe_func "$VM" "keeper"
 		if [[ -n $Phoenix_keeper ]]; then
 			logger_xen "This VM is a \"keeper\", so will not \"verify\" it."
+			logger_xen "" # log formatting
+			logger_xen "" # log formatting
 			continue
 		fi
 		Vcounter=0
