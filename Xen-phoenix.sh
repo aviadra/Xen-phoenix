@@ -351,6 +351,8 @@ if [[ $SERVER_PREP = "enabled" ]] ; then
 		xen_xe_func "$VM" "delete"
 		else
 		logger_xen "Found a \"keeper\" tag for VM \"$VM_NAME_FROM_UUID\" with uuid of \"$VM\". It was \"$Phoenix_keeper\""
+		logger_xen "" # log formatting
+		logger_xen "" # log formatting
 	fi
 	done
 else
