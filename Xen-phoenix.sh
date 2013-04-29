@@ -32,6 +32,12 @@ xen_xe_func()
 {
 	case $2 in
 
+		typer)
+			xen_xe_func "$1" "uuid_2_name"
+			[[ $DEBUG = "ALL" || $DEBUG =~ .*typer.* ]] && logger_xen "The typer func has been invoked for \"$VM_NAME_FROM_UUID\" with UUID of: \"$1\"."
+			VM_TYPE="$( $xencmd vm-param-get uuid=$1 param-name=PV-bootloader 2> /dev/null )"
+			[[ $DEBUG = "ALL" || $DEBUG =~ .*typer.* ]] && logger_xen "typer: $VM_TYPE"
+			;;
 		keeper)
 			xen_xe_func "$1" "uuid_2_name"
 			[[ $DEBUG = "ALL" || $DEBUG =~ .*keeper.* ]] && logger_xen "The keeper func has been invoked for \"$VM_NAME_FROM_UUID\" with UUID of: \"$1\"."
@@ -183,10 +189,31 @@ xen_xe_func()
 					[[ $DEBUG = "ALL" || $DEBUG =~ .*shutdown.* ]] && logger_xen "Will now wait for 5s, to let \"$VM_NAME_FROM_UUID\" with UUID of: \"$1\" time to cool-down"
 					sleep 5
 				else
-					logger_xen "Something went wrong when shutting down the VM \"$VM_NAME_FROM_UUID\" with UUID of: \"$1\"" "expose"
-					continue
+					logger_xen "Something went wrong when shutting down the VM \"$VM_NAME_FROM_UUID\" with UUID of: \"$1\". Waiting for 30 seconds and trying again."
+					sleep 30
+					xen_xe_func "$1" "state"
+					if [[ $POWERSTATE != "halted" ]] ; then
+						[[ $DEBUG = "ALL" || $DEBUG =~ .*shutdown.* ]] && logger_xen "About to: \"$xencmd vm-shutdown uuid=$1\"."
+						$xencmd vm-shutdown uuid="$1"
+						if [[ "$?" -eq 0 ]] ;then
+							logger_xen "Successfully shutdown VM \"$VM_NAME_FROM_UUID\" on second attempt."
+						else
+							if [[ $POWERSTATE != "halted" ]] ; then
+								[[ $DEBUG = "ALL" || $DEBUG =~ .*shutdown.* ]] && logger_xen "About to: \"$xencmd vm-shutdown uuid=$1\"."
+								logger_xen "Was still unable to normally shutdown VM \"$VM_NAME_FROM_UUID\". Will now attempt to use force."
+								$xencmd vm-shutdown uuid="$1" force=true
+								if [[ "$?" -eq 0 ]] ;then
+									logger_xen "Successfully shutdown VM \"$VM_NAME_FROM_UUID\" on third and forceful attempt."
+								else
+									logger_xen "Was still unable to shutdown VM \"$VM_NAME_FROM_UUID\". Even using \"the force\" didn't help :\." "expose"
+									continue
+								fi
+							fi
+
+						fi
+					fi
+					fi
 				fi
-			fi
 			xen_xe_func "$1" "state"
 			;;
 		deps_state_custom)
@@ -348,6 +375,11 @@ if [[ $VERIFIER = "enabled" ]] ; then
 	logger_xen "" # log formatting
 	xen_xe_func " " "list_all_VMs_UUIDs"
 	for VM in $VMs_on_server ; do
+		xen_xe_func "$VM" "keeper"
+		if [[ -n $Phoenix_keeper ]]; then
+			logger_xen "This VM is a \"keeper\", so will not \"verify\" it."
+			continue
+		fi
 		Vcounter=0
 		current_sec="$( date -u +%S )"; current_sec=$( echo $current_sec|sed 's/^0*//' )
 
@@ -368,10 +400,15 @@ if [[ $VERIFIER = "enabled" ]] ; then
 				[[ $DEBUG = "0" ]] && sleep $WARM_UP_DELAY
 			fi
 		
-		[[ $DEBUG != "0" ]] && Retry_counter=3
-		[[ $DEBUG = "0" ]] && Retry_counter=25
+		xen_xe_func "$VM" "typer"
+		if [[ $VM_TYPE = "pygrub" ]]; then 			
+			Retry_counter=25
+		else
+			Retry_counter=60
+		fi
+		[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "Retry_counter was set to: $Retry_counter"
 		while [[ $GLS = $ORG_GLS || $GLS = "<not in database>" ]]; do
-			if [[ $Vcounter -le $Retry_counter ]] ;then
+			if [[ $Vcounter -ge $Retry_counter ]] ;then
 				logger_xen "Vcounter was $Vcounter and Retry_counter was $Retry_counter. So stopped waiting for VM."
 				break
 			fi
