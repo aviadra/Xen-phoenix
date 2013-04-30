@@ -379,7 +379,8 @@ if [[ $VERIFIER = "enabled" ]] ; then
 	for VM in $VMs_on_server ; do
 		xen_xe_func "$VM" "keeper"
 		if [[ -n $Phoenix_keeper ]]; then
-			logger_xen "This VM is a \"keeper\", so will not \"verify\" it."
+			xen_xe_func "$VM" "uuid_2_name"
+			logger_xen "This VM \"$VM_NAME_FROM_UUID\" with uuid \"$VM\" is a \"keeper\", so will not \"verify\" it."
 			logger_xen "" # log formatting
 			logger_xen "" # log formatting
 			continue
@@ -406,9 +407,9 @@ if [[ $VERIFIER = "enabled" ]] ; then
 		
 		xen_xe_func "$VM" "typer"
 		if [[ $VM_TYPE = "pygrub" ]]; then 			
-			Retry_counter=25
+			Retry_counter=25 #2 minuts (25 * 5)
 		else
-			Retry_counter=60
+			Retry_counter=60 # 5minuts (60 * 5)
 		fi
 		[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "Retry_counter was set to: $Retry_counter"
 		while [[ $GLS = $ORG_GLS || $GLS = "<not in database>" ]]; do
@@ -428,8 +429,8 @@ if [[ $VERIFIER = "enabled" ]] ; then
 		[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "The new GLS for \"$VM_NAME_FROM_UUID\" does rufly contain the current time ^_^. Current time was seen as: $( date -u +%H:%M ) & $( date -u +%Y%m%d )"
 		logger_xen "Was able to get a heartbeat from \"$VM_NAME_FROM_UUID\" with uuid of \"$VM\". It was \"$GLS\""
 	else
-		[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "The new GLS  for \"$VM_NAME_FROM_UUID\" does NOT contain the current time??" "expose"
-		logger_xen "FAILED to obtain a heartbeat from \"$VM_NAME_FROM_UUID\" with uuid of \"$VM\". :\\"
+		[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "The new GLS $GLS for \"$VM_NAME_FROM_UUID\" does NOT contain the current time??" "expose"
+		logger_xen "FAILED to obtain a heartbeat from \"$VM_NAME_FROM_UUID\" with uuid of \"$VM\". :\\" "expose"
 	fi
 	xen_xe_func "$VM" "shutdown"
 	logger_xen "" # log formatting
