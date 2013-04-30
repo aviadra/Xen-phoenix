@@ -401,15 +401,15 @@ if [[ $VERIFIER = "enabled" ]] ; then
 			else
 				xen_xe_func "$VM" "shutdown"
 				xen_xe_func "$VM" "start"
-				sleep $WARM_UP_DELAY
-				[[ $DEBUG = "0" ]] && sleep $WARM_UP_DELAY
+				#sleep $WARM_UP_DELAY
+				#[[ $DEBUG = "0" ]] && sleep $WARM_UP_DELAY
 			fi
 		
 		xen_xe_func "$VM" "typer"
 		if [[ $VM_TYPE = "pygrub" ]]; then 			
-			Retry_counter=25 #2 minuts (25 * 5)
+			Retry_counter=60 # 5 minutes (60 * 5)
 		else
-			Retry_counter=60 # 5minuts (60 * 5)
+			Retry_counter=120 # 10 minutes (120 * 5)
 		fi
 		[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "Retry_counter was set to: $Retry_counter"
 		while [[ $GLS = $ORG_GLS || $GLS = "<not in database>" ]]; do
@@ -430,7 +430,11 @@ if [[ $VERIFIER = "enabled" ]] ; then
 		logger_xen "Was able to get a heartbeat from \"$VM_NAME_FROM_UUID\" with uuid of \"$VM\". It was \"$GLS\""
 	else
 		[[ $DEBUG = "ALL" || $DEBUG =~ .*verifier.* ]] && logger_xen "The new GLS $GLS for \"$VM_NAME_FROM_UUID\" does NOT contain the current time??" "expose"
-		logger_xen "FAILED to obtain a heartbeat from \"$VM_NAME_FROM_UUID\" with uuid of \"$VM\". :\\" "expose"
+		logger_xen "FAILED to obtain a heartbeat from \"$VM_NAME_FROM_UUID\" with uuid of \"$VM\". :\\ The new GLS $GLS for \"$VM_NAME_FROM_UUID\" does NOT contain the current time $( date -u +%H:%M ) or date $( date -u +%Y%m%d ) but is diffrent then the ORG_GLS $ORG_GLS ??" "expose"
+	fi
+	[[ $DEBUG = "0" ]] && sleep $WARM_UP_DELAY
+	if [[ $VM_TYPE != "pygrub" && $DEBUG = "0" ]]; then
+		sleep $WARM_UP_DELAY 
 	fi
 	xen_xe_func "$VM" "shutdown"
 	logger_xen "" # log formatting
